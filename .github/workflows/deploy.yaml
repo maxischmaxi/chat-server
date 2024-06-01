@@ -35,7 +35,6 @@ jobs:
       run: |
         gcloud compute scp ./chat-server chat-server:~/chat-server --zone=${{ secrets.ZONE }}
         gcloud compute ssh chat-server --zone=${{ secrets.ZONE }} --command 'sudo systemctl restart chat-server'
-      shell: /usr/bin/bash -e
       env:
         GOROOT: /opt/hostedtoolcache/go/1.17.0/x64
         CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE: ${{ secrets.GOOGLE_CREDENTIALS }}
