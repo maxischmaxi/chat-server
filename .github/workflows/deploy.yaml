@@ -11,39 +11,56 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v2
+      uses: actions/checkout@master
 
     - name: Set up Go
-      uses: actions/setup-go@v2
+      uses: actions/setup-go@master
       with:
         go-version: '1.22.3'
       
     - name: Build
-      run: go build -o chat-server
+      run: CGO_ENABLED=0 go build -o chat-server
 
     - name: Authenticate to Google Cloud
-      uses: google-github-actions/auth@v1
+      uses: google-github-actions/auth@v2
       with:
         credentials_json: ${{ secrets.GOOGLE_CREDENTIALS }}
 
     - name: Set up Google Cloud SDK
-      uses: google-github-actions/setup-gcloud@v1
+      uses: google-github-actions/setup-gcloud@v2
       with:
         project_id: ${{ secrets.GCP_PROJECT }}
 
-    - name: Copy the binary to the VM and restart the service
+    - name: Add SSH Key
       run: |
-        gcloud compute scp ./chat-server chat-server:~/chat-server --zone=${{ secrets.ZONE }}
-        gcloud compute ssh chat-server --zone=${{ secrets.ZONE }} --command 'sudo systemctl restart chat-server'
-      env:
-        GOROOT: /opt/hostedtoolcache/go/1.17.0/x64
-        CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE: ${{ secrets.GOOGLE_CREDENTIALS }}
-        GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
-        GOOGLE_GHA_CREDS_PATH: ${{ secrets.GOOGLE_CREDENTIALS }}
-        CLOUDSDK_CORE_PROJECT: ${{ secrets.GCP_PROJECT }}
-        CLOUDSDK_PROJECT: ${{ secrets.GCP_PROJECT }}
-        GCLOUD_PROJECT: ${{ secrets.GCP_PROJECT }}
-        GCP_PROJECT: ${{ secrets.GCP_PROJECT }}
-        GOOGLE_CLOUD_PROJECT: ${{ secrets.GCP_PROJECT }}
-        CLOUDSDK_METRICS_ENVIRONMENT: github-actions-setup-gcloud
-        CLOUDSDK_METRICS_ENVIRONMENT_VERSION: 1.1.1
+        mkdir -p ~/.ssh
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/google_compute_engine
+        echo "${{ secrets.SSH_PUBLIC_KEY }}" > ~/.ssh/google_compute_engine.pub
+        chmod 600 ~/.ssh/google_compute_engine
+        chmod 600 ~/.ssh/google_compute_engine.pub
+        ssh-keyscan github.com >> ~/.ssh/known_hosts
+
+    - name: Copy Binary to VM
+      run: |
+        gcloud compute scp --recurse ./chat-server chat-server:~/chat-server --zone=${{ secrets.ZONE }} --ssh-key-file ~/.ssh/google_compute_engine
+
+    - name: Copy Service File to VM
+      run: |
+        gcloud compute scp --recurse ./scripts/openssl.sh chat-server:~/openssl.sh --zone=${{ secrets.ZONE }} --ssh-key-file ~/.ssh/google_compute_engine
+
+    - name: Set File Permissions on VM
+      run: |
+        gcloud compute ssh chat-server --zone=${{ secrets.ZONE }} --command="chmod +x chat-server" --ssh-key-file ~/.ssh/google_compute_engine
+        gcloud compute ssh chat-server --zone=${{ secrets.ZONE }} --command="chmod +x openssl.sh" --ssh-key-file ~/.ssh/google_compute_engine
+
+    - name: Run Openssl Script
+      run: |
+        gcloud compute ssh chat-server --zone=${{ secrets.ZONE }} --command="chmod +x openssl.sh && ./openssl.sh" --ssh-key-file ~/.ssh/google_compute_engine
+    
+    - name: Set File Permissions for Service File
+      run: |
+        gcloud compute ssh chat-server --zone=${{ secrets.ZONE }} --command="sudo chmod 644 key.pem && sudo chmod 644 cert.pem" --ssh-key-file ~/.ssh/google_compute_engine
+
+    - name: Restart Service
+      run: |
+        gcloud compute ssh chat-server --zone=${{ secrets.ZONE }} --command="sudo systemctl restart chat-server" --ssh-key-file ~/.ssh/google_compute_engine
