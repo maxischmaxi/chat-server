@@ -31,7 +31,20 @@ jobs:
       with:
         project_id: ${{ secrets.GCP_PROJECT }}
 
-    - name: Deploy to GCP
+    - name: Copy the binary to the VM and restart the service
       run: |
-        gcloud compute scp ./chat-server chat-server:~/chat-server --zone=europe-west10-a
-        gcloud compute ssh chat-server --zone=europe-west10-a --command 'sudo systemctl restart chat-server'
+        gcloud compute scp ./chat-server chat-server:~/chat-server --zone=${{ secrets.ZONE }}
+        gcloud compute ssh chat-server --zone=${{ secrets.ZONE }} --command 'sudo systemctl restart chat-server'
+      shell: /usr/bin/bash -e
+      env:
+        GOROOT: /opt/hostedtoolcache/go/1.17.0/x64
+        CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE: ${{ secrets.GOOGLE_CREDENTIALS }}
+        GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+        GOOGLE_GHA_CREDS_PATH: ${{ secrets.GOOGLE_CREDENTIALS }}
+        CLOUDSDK_CORE_PROJECT: ${{ secrets.GCP_PROJECT }}
+        CLOUDSDK_PROJECT: ${{ secrets.GCP_PROJECT }}
+        GCLOUD_PROJECT: ${{ secrets.GCP_PROJECT }}
+        GCP_PROJECT: ${{ secrets.GCP_PROJECT }}
+        GOOGLE_CLOUD_PROJECT: ${{ secrets.GCP_PROJECT }}
+        CLOUDSDK_METRICS_ENVIRONMENT: github-actions-setup-gcloud
+        CLOUDSDK_METRICS_ENVIRONMENT_VERSION: 1.1.1
