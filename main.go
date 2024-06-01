@@ -10,13 +10,15 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gofrs/uuid"
 )
 
 type Message struct {
-	Content string `json:"content"`
-	Sender  string `json:"sender"`
+	Content   string `json:"content"`
+	Sender    string `json:"sender"`
+	Timestamp string `json:"timestamp"`
 }
 
 type Server struct {
@@ -47,8 +49,9 @@ func New(config *Config) *Server {
 
 func (server *Server) Broadcast(message string, sender string) {
 	msg := Message{
-		Content: message,
-		Sender:  sender,
+		Content:   message,
+		Sender:    sender,
+		Timestamp: time.Now().Format("2006-01-02 15:04:05"),
 	}
 
 	encodedMsg, err := json.Marshal(msg)
@@ -102,34 +105,65 @@ func (server *Server) OnClientConnected(client *Client) {
 			break
 		}
 
-		if strings.HasPrefix(reply, "/nick") {
-			client.Nickname = strings.TrimPrefix(reply, "/nick")
-			client.Nickname = strings.TrimSpace(client.Nickname)
-			client.Nickname = strings.Replace(client.Nickname, "\n", "", -1)
+		if strings.HasPrefix(reply, "/") {
+			if strings.HasPrefix(reply, "/nick") {
+				client.Nickname = strings.TrimPrefix(reply, "/nick")
+				client.Nickname = strings.TrimSpace(client.Nickname)
+				client.Nickname = strings.Replace(client.Nickname, "\n", "", -1)
 
-			fmt.Println("Client connected with nickname:", client.Nickname)
+				fmt.Println("Client connected with nickname:", client.Nickname)
 
-			successMsg := Message{
-				Sender:  "server",
-				Content: "nickname set",
+				successMsg := Message{
+					Sender:    "server",
+					Content:   "nickname set",
+					Timestamp: time.Now().Format("2006-01-02 15:04:05"),
+				}
+
+				encodedMsg, err := json.Marshal(successMsg)
+				if err != nil {
+					log.Fatal(err)
+				}
+
+				_, err = client.Conn.Write(append(encodedMsg, '\n'))
+				if err != nil {
+					log.Fatal(err)
+				}
+
+				server.Broadcast(fmt.Sprintf("%s connected", client.Nickname), "server")
+
+				server.mu.Lock()
+				server.Clients = append(server.Clients, client)
+				server.mu.Unlock()
+				continue
 			}
 
-			encodedMsg, err := json.Marshal(successMsg)
-			if err != nil {
-				log.Fatal(err)
+			if strings.HasPrefix(reply, "/users") {
+				var users []string
+
+				server.mu.Lock()
+				for _, c := range server.Clients {
+					users = append(users, c.Nickname)
+				}
+				server.mu.Unlock()
+
+				usersMsg := Message{
+					Sender:    "server",
+					Content:   "users: " + strings.Join(users, ", "),
+					Timestamp: time.Now().Format("2006-01-02 15:04:05"),
+				}
+
+				encodedMsg, err := json.Marshal(usersMsg)
+				if err != nil {
+					log.Fatal(err)
+				}
+
+				_, err = client.Conn.Write(append(encodedMsg, '\n'))
+				if err != nil {
+					log.Fatal(err)
+				}
+
+				continue
 			}
-
-			_, err = client.Conn.Write(append(encodedMsg, '\n'))
-			if err != nil {
-				log.Fatal(err)
-			}
-
-			server.Broadcast(fmt.Sprintf("%s connected", client.Nickname), "server")
-
-			server.mu.Lock()
-			server.Clients = append(server.Clients, client)
-			server.mu.Unlock()
-			continue
 		}
 
 		reply = strings.Replace(reply, "\n", "", -1)
